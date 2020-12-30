@@ -3,18 +3,18 @@ import random
 from numpy.random import choice
 from collections import defaultdict
 import os
+import asyncio
 from classes import Encounter
+from helper import numToEmoji
 
 client = discord.Client()
 
 def coinflip():
   return random.randint(0,1)
 
-def blockDistributer(listofitems):
+def blockDistributer(listofitems, probabilities):
   items = listofitems
-  probabilities = [0.6,0.1,0.1,0.1,0.1]
   return choice(items,p=probabilities)
-
 
 def boardtostr(board):
   return board[0][0] + board[0][1] + board[0][2] + '\n' + board[1][0] + board[1][1] + board[1][2] + '\n' + board[2][0] + board[2][1] + board[2][2] + '\n'
@@ -28,80 +28,20 @@ async def on_ready():
 async def on_message(message):
   if message.author == client.user: return
 
-  if message.content.startswith('}coinflip'):
-    channel = message.channel
-    HoTmsg = await channel.send('Heads or tails?')
-    happythonk = discord.utils.get(message.guild.emojis, name='happythonk')
-    thonktails = discord.utils.get(message.guild.emojis, name='thonktails')
-    def Reactcheck(reaction, user):
-      return (reaction.emoji == happythonk or reaction.emoji == thonktails) and user == message.author
-
-    if happythonk and thonktails:
-      await HoTmsg.add_reaction(happythonk)
-      await HoTmsg.add_reaction(thonktails)
-    reaction, user = await client.wait_for('reaction_add', check=Reactcheck)
-    reactionlist = [reaction.emoji]
-    if reaction.emoji == happythonk:
-      result = 0
-      reactionlist.append(thonktails)
-    else:
-      result = 1
-      reactionlist.append(happythonk)
-    if result == coinflip():
-      await HoTmsg.edit(content= (str(reactionlist[0]) + ' was chosen'+ '\n' + message.author.mention +' won!'))
-    else: 
-      await HoTmsg.edit(content= (str(reactionlist[1]) + ' was chosen'+ '\n' + message.author.mention +' lost!'))
-
-  if message.content.startswith("}say"):
-    await message.channel.send(" ".join(message.content.split()[1:]))
-
+  ###########################################
+  #                   Help                  #
+  ###########################################
   if message.content.startswith("}help"):
-    if coinflip() == 1:
-      await message.channel.send("I need help too.");
-      responses = ["are you okay", "hang in there", "???", "loser"]
-      answer = await client.wait_for('message')
-      if (answer.content.lower() in responses):
-        await message.channel.send("):");
-    else:
-      await message.channel.send("""
-        :hot_face: **Main Commands** :hot_face::
-}coinflip - flip a coin
-}ttt <@mention> - challenge another person to tic-tac-toe
-}help - help me please  
-      """)
+    helpMessage = discord.Embed(title=":hot_face: **Main Commands**:")
+    helpMessage.add_field(name="}minecraft", value="Minecraft, but not really", inline=False)
+    helpMessage.add_field(name="}ttt <@mention>", value="Tic-Tac-Toe, challenge a friend!", inline=False)
+    helpMessage.add_field(name="}coinflip", value="coinflip, test your odds", inline=False)
+    await message.channel.send(embed=helpMessage)
 
-      
-  if message.content.startswith("😎") and message.author.name == "dog": 
-    await message.channel.send("I agree dog")
-  
-
-  if message.content.startswith("}minecraft"):
-
-    def numToEmoji(num: int) -> str:
-      """ converts ints into emoji string representation """
-      s = [x for x in str(num)]
-      for index, letter in enumerate(s):
-        if letter == "0":
-          s[index] = ":zero:"
-        elif letter == "1":
-          s[index] = ":one:"
-        elif letter == "2":
-          s[index] = ":two:"
-        elif letter == "3":
-          s[index] = ":three:"
-        elif letter == "4":
-          s[index] = ":four:"
-        elif letter == "5":
-          s[index] = ":five:"
-        elif letter == "6":
-          s[index] = ":six:"
-        elif letter == "7":
-          s[index] = ":seven:"
-        elif letter == "8":
-          s[index] = ":eight:"
-        elif letter == "9":
-          s[index] = ":nine:"
-      return "".join(s)
+  ###########################################
+  #               Minecraft                 #
+  ###########################################
+  if message.content.startswith("}minecraft") or message.content.startswith("}mc"):
 
     def inventoryToEmoji(inv: dict) -> str:
       """ k value must be named after discord emoji """
@@ -112,22 +52,28 @@ async def on_message(message):
     
     # Animal Encounters
     man = Encounter(":man_running:")
-    pig = Encounter(":pig2:","🔪","pig")
-    cow = Encounter(":cow2:","🔪","cow")
+    pig = Encounter(":pig2:","🔪","pig",[1,2,3],[1/3,1/3,1/3])
+    cow = Encounter(":cow2:","🔪","cow",[1,2,3],[1/3,1/3,1/3])
+    rabbit = Encounter(":rabbit2:","🔪","rabbit",[1],[1])
+    goat = Encounter(":goat:","🔪","goat",[1],[1])
 
     # Resources Encounters
-    tree = Encounter(":evergreen_tree:","🪓","wood")
-    rock = Encounter(":rock:","⛏","rock")
+    tree = Encounter(":evergreen_tree:","🪓","wood",[5,6,7,8],[1/4,1/4,1/4,1/4])
+    rock = Encounter(":mountain:","⛏","mountain",[1],[1])
+    cactus = Encounter(":cactus:","🪓","cactus",[1,2,3],[1/3,1/3,1/3])
 
     # Enviroment Encounters
     blacksquare = Encounter(":black_large_square:")
     greensquare = Encounter(":green_square:")
 
     # All Encounters
-    encounters = [blacksquare,pig,tree,rock,cow]
+    encounters = [blacksquare,pig,tree,rock,cow] # Forest/Plain Biome
+    desertEncounters = [blacksquare,rock,cactus,rabbit]
+    snowEncounters = [blacksquare,rock,tree,goat] 
+    encountersprob = [0.6,0.1,0.1,0.1,0.1]
 
     # Initialize Playing Field
-    playField = [[blockDistributer(encounters) for x in range(11)] for x in range(2)] + [[greensquare for x in range(11)]]
+    playField = [[blacksquare for x in range(11)]] + [[blockDistributer(encounters, encountersprob) for x in range(11)]] + [[greensquare for x in range(11)]]
     playField[1][10] = man
 
     # Initialize Player Statistics
@@ -135,68 +81,66 @@ async def on_message(message):
     hunger = [":meat_on_bone:"]+ [":brown_square:" for x in range(10)]
     inventory = defaultdict(int)
     steps = 0
-    actions = ["⬅","➡","🔪","🪓","⛏"]
+    actions = ["⬅","🔪","🪓","⛏"]
 
-    def moveCheck(reaction, user):
-      return reaction.emoji in actions and reaction.message == grassMSG and user != grassMSG.author
+    def moveCheck(payload):
+      return str(payload.emoji) in actions and payload.message_id == grassMSG.id and payload.user_id != grassMSG.author.id
+    
+    def moveCheck2(payload):
+      return str(payload.emoji) == "⬅" and payload.message_id == grassMSG.id
 
-    possibleBlocks = [":black_large_square:",":evergreen_tree:",":pig2:",":rock:"]
-    blockChoice = 0
+    # Sends PlayField as bot messages
     await message.channel.send("".join(i.name for i in playField[0]))
     playerMSG = await message.channel.send("".join(i.name for i in playField[1]))
     grassMSG = await message.channel.send("".join(i.name for i in playField[2]))
     healthMSG = await message.channel.send("".join(health))
     hungerMSG = await message.channel.send("".join(hunger))
     inventoryMSG = await message.channel.send("឵឵឵" + "".join(inventoryToEmoji(inventory)))
+  
     await grassMSG.add_reaction("⬅")
-    await grassMSG.add_reaction("➡")
     while(len(health) > 1):
       if playField[1][9] != blacksquare:
         await grassMSG.add_reaction(playField[1][9].action)
 
-      reaction, user = await client.wait_for('reaction_add', check=moveCheck)
+      # Wait for User Input via Discord Reaction
+      pending_tasks = [client.wait_for('raw_reaction_add',check=moveCheck), client.wait_for('raw_reaction_remove',check=moveCheck2)]
+      done_tasks, pending_tasks = await asyncio.wait(pending_tasks,return_when=asyncio.FIRST_COMPLETED)
+      for task in done_tasks: payload = await task
+      reaction = str(payload.emoji)
+
       if playField[1][9] != blacksquare:
         await grassMSG.clear_reaction(playField[1][9].action)
 
-      if reaction.emoji == "🔪":
-        if (playField[1][9] == pig):
-          inventory["pig"] += random.randint(1,3)
-        elif (playField[1][9] == cow):
-          inventory["cow"] += random.randint(1,3)
+      # Player Encounter Actions
+      if reaction not in ["⬅"]:
+        inventory[playField[1][9].drop] += blockDistributer(playField[1][9].dropamount,playField[1][9].droprates)
         await inventoryMSG.edit(content = "឵឵឵" + "".join(inventoryToEmoji(inventory)))
-        playField[1][9] = blacksquare
-      elif reaction.emoji == "🪓":
-        inventory["wood"] += random.randint(5,8)
-        await inventoryMSG.edit(content = "឵឵឵" + "".join(inventoryToEmoji(inventory)))
-        playField[1][9] = blacksquare
-      elif reaction.emoji == "⛏":
-        inventory["rock"] += random.randint(1,3)
-        await inventoryMSG.edit(content = "឵឵឵" + "".join(inventoryToEmoji(inventory)))
-        playField[1][9] = blacksquare     
+        playField[1][9] = blacksquare   
 
-      if reaction.emoji == "⬅":
+      # Player Move Left
+      if reaction == "⬅":
         steps += 1
         for i in reversed(range(9)):
           playField[1][i+1] = playField[1][i]
         if steps % 5 == 0:
           if len(hunger) > 1:
             hunger.pop()
-            # try:
-            #   lastHunger = len(healthHunger[1]) - 1 - healthHunger[1][::-1].index(":brown_square:")
-            #   healthHunger[1][lastHunger] = ":black_large_square:"
-            # except ValueError:
-            #  pass
             await hungerMSG.edit(content = "".join(hunger))
         if len(hunger) == 1:
           if steps % 2 == 0:
             if len(health) > 1:
               health.pop()
               await healthMSG.edit(content = "".join(health))
-        playField[1][0] = blockDistributer(encounters)
+        playField[1][0] = blockDistributer(encounters, encountersprob)
       await playerMSG.edit(content = "".join(i.name for i in playField[1]))
+    
+    # Player Death
     death = Encounter(":headstone:")
     playField[1][10] = death
       
+  ###########################################
+  #               Tic-Tac-Toe               #
+  ###########################################
   if message.content.startswith('}ttt'):
     turn = 1
     won = False
@@ -287,7 +231,41 @@ async def on_message(message):
         break
       turn+=1
 
+  ###########################################
+  #               Coinflip                  #
+  ###########################################
+  if message.content.startswith('}coinflip'):
+    channel = message.channel
+    HoTmsg = await channel.send('Heads or tails?')
+    happythonk = discord.utils.get(message.guild.emojis, name='happythonk')
+    thonktails = discord.utils.get(message.guild.emojis, name='thonktails')
+    def Reactcheck(reaction, user):
+      return (reaction.emoji == happythonk or reaction.emoji == thonktails) and user == message.author
 
+    if happythonk and thonktails:
+      await HoTmsg.add_reaction(happythonk)
+      await HoTmsg.add_reaction(thonktails)
+    reaction, user = await client.wait_for('reaction_add', check=Reactcheck)
+    reactionlist = [reaction.emoji]
+    if reaction.emoji == happythonk:
+      result = 0
+      reactionlist.append(thonktails)
+    else:
+      result = 1
+      reactionlist.append(happythonk)
+    if result == coinflip():
+      await HoTmsg.edit(content= (str(reactionlist[0]) + ' was chosen'+ '\n' + message.author.mention +' won!'))
+    else: 
+      await HoTmsg.edit(content= (str(reactionlist[1]) + ' was chosen'+ '\n' + message.author.mention +' lost!'))
+
+  ###########################################
+  #              Miscellaneous              #
+  ###########################################
+  if message.content.startswith("}say"):
+    await message.channel.send(" ".join(message.content.split()[1:]))
+
+  if message.content.startswith("😎") and message.author.name == "dog": 
+    await message.channel.send("I agree dog")
 
 
 client.run(os.getenv('TOKEN'))
