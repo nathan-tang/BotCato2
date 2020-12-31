@@ -3,10 +3,31 @@ from collections import defaultdict
 import os
 import asyncio
 from classes import ResourceEncounter,AnimalEncounter
+import queue
 import helper
 from urllib.request import urlopen
 import requests
 import json
+
+ytdl_format_options = {
+    'format': 'bestaudio/best',
+    'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
+    'restrictfilenames': True,
+    'noplaylist': True,
+    'nocheckcertificate': True,
+    'ignoreerrors': False,
+    'logtostderr': False,
+    'quiet': True,
+    'no_warnings': True,
+    'default_search': 'auto',
+    'source_address': '0.0.0.0' # bind to ipv4 since ipv6 addresses cause issues sometimes
+}
+
+ffmpeg_options = {
+    'options': '-vn'
+}
+
+# ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
 
 client = discord.Client()
 
@@ -17,6 +38,45 @@ async def on_ready():
 @client.event
 async def on_message(message):
   if message.author == client.user: return
+#  if (!message.content.startsWith("}") return; this saves runtime but we would sacrafice or meme commands like ): and :sunglasses:
+  
+  ###########################################
+  #                  Music                  #
+  ###########################################
+  musicQueue = queue.Queue()
+
+  async def play(message, musicQueue):
+    args = message.content.split()
+
+    voiceChannel = message.author.voice.channel
+
+    if (not voiceChannel):
+      await message.channel.send("You need to be in a voice channel to play music!")
+    
+    await voiceChannel.connect()
+    # permissions = voiceChannel.permissionsFor(message.client.user);
+    # if (not permissions.has("CONNECT") or not permissions.has("SPEAK")):
+    #   await message.channel.send(
+    #     "I need the permissions to join and speak in your voice channel!"
+    #   )
+
+    #song = {"title": songInfo.videoDetails.title, "url": songInfo.videoDetails.video_url }
+
+    if (not musicQueue):
+      pass
+
+  if (message.content.startswith("}play")):
+    await play(message, musicQueue) 
+    return
+  elif (message.content.startswith("}skip")):
+    await skip(message, musicQueue) 
+    return
+  elif (message.content.startswith("}stop")):
+    await stop(message, musicQueue) 
+    return
+  elif (message.content.startswith("}leave")):
+    await message.guild.voice_client.disconnect()
+    return
 
   ###########################################
   #                   Help                  #
@@ -26,6 +86,7 @@ async def on_message(message):
     helpMessage.add_field(name="}minecraft", value="Minecraft, but not really", inline=False)
     helpMessage.add_field(name="}ttt <@mention>", value="Tic-Tac-Toe, challenge a friend!", inline=False)
     helpMessage.add_field(name="}coinflip", value="coinflip, test your odds", inline=False)
+    helpMessage.add_field(name="}dog", value="displays an image of a dog... sometimes", inline=False)
     await message.channel.send(embed=helpMessage)
 
   ###########################################
