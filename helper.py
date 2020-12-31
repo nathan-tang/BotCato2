@@ -1,3 +1,6 @@
+import random
+from numpy.random import choice 
+
 def numToEmoji(num: int) -> str:
   """ converts ints into emoji string representation """
   s = [x for x in str(num)]
@@ -23,3 +26,13 @@ def numToEmoji(num: int) -> str:
     elif letter == "9":
       s[index] = ":nine:"
   return "".join(s)
+
+def coinflip():
+  return random.randint(0,1)
+
+def blockDistributer(listofitems, probabilities):
+  items = listofitems
+  return choice(items,p=probabilities)
+
+def boardToStr(board):
+  return board[0][0] + board[0][1] + board[0][2] + '\n' + board[1][0] + board[1][1] + board[1][2] + '\n' + board[2][0] + board[2][1] + board[2][2] + '\n'
