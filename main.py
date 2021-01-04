@@ -1,11 +1,11 @@
+from keep_alive import keep_alive
 import discord
 from collections import defaultdict
 import os
 import asyncio
-from classes import ResourceEncounter,AnimalEncounter
+from classes import ResourceEncounter,AnimalEncounter, Food
 import queue
 import helper
-from urllib.request import urlopen
 import requests
 import json
 
@@ -39,10 +39,183 @@ async def on_ready():
 async def on_message(message):
   if message.author == client.user: return
 #  if (!message.content.startsWith("}") return; this saves runtime but we would sacrafice or meme commands like ): and :sunglasses:
+
+  ###########################################
+  #                   Help                  #
+  ###########################################
+  if message.content.startswith("}help"):
+    helpMessage = discord.Embed(title=":hot_face: **Main Commands**:")
+    helpMessage.add_field(name="}minecraft", value="Minecraft, but not really", inline=False)
+    helpMessage.add_field(name="}ttt <@mention>", value="Tic-Tac-Toe, challenge a friend!", inline=False)
+    helpMessage.add_field(name="}coinflip", value="coinflip, test your odds", inline=False)
+    helpMessage.add_field(name="}dog", value="displays an image of a dog... sometimes", inline=False)
+    helpMessage.add_field(name="}play <video>", value="search youtube for video", inline=False)
+    helpMessage.add_field(name="}skip", value="skip current video", inline=False)
+    helpMessage.add_field(name="}stop", value="stop current video", inline=False)
+    helpMessage.add_field(name="}leave", value="make BotCato leave ):", inline=False)
+
+
+    await message.channel.send(embed=helpMessage)
+
+  ###########################################
+  #               Minecraft                 #
+  ###########################################
+  if message.content.startswith("}minecraft") or message.content.startswith("}mc"):
+    # TODO: check for edge case where user emotes manually 
+    def inventoryToEmoji(inv: dict) -> str:
+      """ k value must be named after discord emoji """
+      result = ""
+      for k,v in inv.items():
+          result += ":" + k + ":" + helper.numToEmoji(v)
+      return result
+    # Food
+    meat = Food("cut_of_meat","🥩",1)
+    cookedMeat = Food("meat_on_bone","🍖",3)
+    foods = [meat, cookedMeat]
+    foodemojis = [i.emoji for i in foods]
+    
+    # Animal Encounters
+    man = ResourceEncounter(":man_running:")
+    pig = AnimalEncounter(":pig2:")
+    cow = AnimalEncounter(":cow2:")
+    rabbit = AnimalEncounter(":rabbit2:")
+    goat = AnimalEncounter(":goat:")
+
+    # Resources Encounters
+    tree = ResourceEncounter(":evergreen_tree:","🪓","wood",[5,6,7,8],[1/4,1/4,1/4,1/4])
+    rock = ResourceEncounter(":mountain:","⛏","mountain",[1],[1])
+    cactus = ResourceEncounter(":cactus:","🪓","cactus",[1,2,3],[1/3,1/3,1/3])
+
+    # Enviroment Encounters
+    bluesquare = ResourceEncounter(":blue_square:")
+    greensquare = ResourceEncounter(":green_square:")
+
+    # All Encounters
+    encounters = [bluesquare,pig,tree,rock,cow] # Forest/Plain Biome
+    desertEncounters = [bluesquare,rock,cactus,rabbit]
+    snowEncounters = [bluesquare,rock,tree,goat] 
+    encountersprob = [0.6,0.1,0.1,0.1,0.1]
+
+    # Initialize Playing Field
+    playField = [[bluesquare for x in range(11)]] + [[helper.blockDistributer(encounters, encountersprob) for x in range(11)]] + [[greensquare for x in range(11)]]
+    playField[1][10] = man
+
+    # Initialize Player Statistics
+    health = [":heart: "] + [":red_square:" for x in range(10)]
+    hunger = [":meat_on_bone: "]+ [":brown_square:" for x in range(10)]
+    inventory = defaultdict(int)
+    steps = 0
+    actions = ["⬅","🔪","🪓","⛏","🥩","🍖","🔥"]
+
+    def moveCheck(payload):
+      return str(payload.emoji) in actions and payload.message_id == grassMSG.id and payload.user_id != grassMSG.author.id
+    
+    def moveCheck2(payload):
+      return str(payload.emoji) in ["⬅","🥩","🍖","🔥"] and payload.message_id == grassMSG.id
+
+    # Sends PlayField as bot messages
+    await message.channel.send("".join(i.name for i in playField[0]))
+    playerMSG = await message.channel.send("".join(i.name for i in playField[1]))
+    grassMSG = await message.channel.send("".join(i.name for i in playField[2]))
+    healthMSG = await message.channel.send("".join(health))
+    hungerMSG = await message.channel.send("".join(hunger))
+    inventoryMSG = await message.channel.send("឵឵឵" + "".join(inventoryToEmoji(inventory)))
   
+    await grassMSG.add_reaction("⬅")
+    while(len(health) > 1):
+      if playField[1][9] != bluesquare:
+        await grassMSG.add_reaction(playField[1][9].action)
+      for food in foods:
+        try:
+          if inventory.get(food.name) > 0 and len(hunger) < 11:
+            await grassMSG.add_reaction(food.emoji)
+        except:
+          pass
+      try:
+        if inventory.get("wood") > 1 and inventory.get("mountain") > 0 and inventory.get("cut_of_meat") > 0:
+          await grassMSG.add_reaction("🔥")
+      except:
+        pass
+      if len(hunger) == 11:
+            await grassMSG.clear_reaction(food.emoji)
+      # Wait for User Input via Discord Reaction
+      pending_tasks = [client.wait_for('raw_reaction_add',check=moveCheck), client.wait_for('raw_reaction_remove',check=moveCheck2)]
+      done_tasks, pending_tasks = await asyncio.wait(pending_tasks,return_when=asyncio.FIRST_COMPLETED)
+      for task in done_tasks: payload = await task
+      reaction = str(payload.emoji)
+
+      if playField[1][9] != bluesquare:
+        await grassMSG.clear_reaction(playField[1][9].action)
+
+      # Player Encounter Actions
+      if reaction not in ["⬅"]:
+        if reaction in foodemojis:
+          chosenFood = foods[foodemojis.index(reaction)]
+          try:
+            if inventory.get(chosenFood.name) > 0 and len(hunger) < 11:
+              for i in range(chosenFood.fill):
+                hunger.append(":brown_square:")
+              await hungerMSG.edit(content = "".join(hunger))
+              inventory[chosenFood.name] -= 1
+            if inventory.get(chosenFood.name) == 0:
+              await grassMSG.clear_reaction(reaction)
+              inventory.pop(chosenFood.name)
+          except:
+            pass
+        elif reaction == "🔥":
+          try:
+            if inventory.get("wood") > 1 and inventory.get("mountain") > 0 and inventory.get("cut_of_meat") > 0:
+              inventory["meat_on_bone"] += 1
+              inventory["wood"] -= 1
+              inventory["mountain"] -= 1
+              inventory["cut_of_meat"] -= 1
+              for i in ["wood","mountain","cut_of_meat"]:
+                if inventory.get(i) == 0:
+                  await grassMSG.clear_reaction("🔥")
+                  if i == "cut_of_meat":
+                    await grassMSG.clear_reaction("🥩")
+                  inventory.pop(i)
+          except:
+            pass
+        else:
+          if len(hunger) > 1:
+            hunger.pop()
+            await hungerMSG.edit(content = "".join(hunger))
+          drops = helper.blockDistributer(playField[1][9].dropamount,playField[1][9].droprates)
+          inventory[playField[1][9].drop] += drops
+          playField[1][9] = bluesquare
+        await inventoryMSG.edit(content = "឵឵឵" + "".join(inventoryToEmoji(inventory)))
+
+      # Player Move Left
+      if reaction == "⬅":
+        steps += 1
+        for i in reversed(range(9)):
+          playField[1][i+1] = playField[1][i]
+        if steps % 5 == 0:
+          if len(hunger) > 1:
+            hunger.pop()
+            await hungerMSG.edit(content = "".join(hunger))
+        if len(hunger) == 1:
+          if steps % 2 == 0:
+            if len(health) > 1:
+              health.pop()
+              await healthMSG.edit(content = "".join(health))
+        playField[1][0] = helper.blockDistributer(encounters, encountersprob)
+      await playerMSG.edit(content = "".join(i.name for i in playField[1]))
+    
+    # Player Death
+    death = ResourceEncounter(":headstone:")
+    playerMSG = await message.channel.send("".join(i.name for i in playField[1]))
+    playField[1][10] = death
+      
   ###########################################
   #                  Music                  #
   ###########################################
+  
+  # need ytdl python documentation 
+  # javascript is easier )':
+  # idk wtf the methods are to even use for python ytdl
+
   musicQueue = queue.Queue()
 
   async def play(message, musicQueue):
@@ -78,148 +251,6 @@ async def on_message(message):
     await message.guild.voice_client.disconnect()
     return
 
-  ###########################################
-  #                   Help                  #
-  ###########################################
-  if message.content.startswith("}help"):
-    helpMessage = discord.Embed(title=":hot_face: **Main Commands**:")
-    helpMessage.add_field(name="}minecraft", value="Minecraft, but not really", inline=False)
-    helpMessage.add_field(name="}ttt <@mention>", value="Tic-Tac-Toe, challenge a friend!", inline=False)
-    helpMessage.add_field(name="}coinflip", value="coinflip, test your odds", inline=False)
-    helpMessage.add_field(name="}dog", value="displays an image of a dog... sometimes", inline=False)
-    await message.channel.send(embed=helpMessage)
-
-  ###########################################
-  #               Minecraft                 #
-  ###########################################
-  if message.content.startswith("}minecraft") or message.content.startswith("}mc"):
-    # TODO: check for edge case where user emotes manually 
-    def inventoryToEmoji(inv: dict) -> str:
-      """ k value must be named after discord emoji """
-      result = ""
-      for k,v in inv.items():
-          result += ":" + k + ":" + helper.numToEmoji(v)
-      return result
-    
-    # Animal Encounters
-    man = ResourceEncounter(":man_running:")
-    pig = AnimalEncounter(":pig2:","🔪","pig")
-    cow = AnimalEncounter(":cow2:","🔪","cow")
-    rabbit = AnimalEncounter(":rabbit2:","🔪","rabbit")
-    goat = AnimalEncounter(":goat:","🔪","goat")
-
-    # Resources Encounters
-    tree = ResourceEncounter(":evergreen_tree:","🪓","wood",[5,6,7,8],[1/4,1/4,1/4,1/4])
-    rock = ResourceEncounter(":mountain:","⛏","mountain",[1],[1])
-    cactus = ResourceEncounter(":cactus:","🪓","cactus",[1,2,3],[1/3,1/3,1/3])
-
-    # Enviroment Encounters
-    bluesquare = ResourceEncounter(":blue_square:")
-    greensquare = ResourceEncounter(":green_square:")
-
-    # All Encounters
-    encounters = [bluesquare,pig,tree,rock,cow] # Forest/Plain Biome
-    desertEncounters = [bluesquare,rock,cactus,rabbit]
-    snowEncounters = [bluesquare,rock,tree,goat] 
-    encountersprob = [0.6,0.1,0.1,0.1,0.1]
-
-    # Initialize Playing Field
-    playField = [[bluesquare for x in range(11)]] + [[helper.blockDistributer(encounters, encountersprob) for x in range(11)]] + [[greensquare for x in range(11)]]
-    playField[1][10] = man
-
-    # Initialize Player Statistics
-    health = [":heart: "] + [":red_square:" for x in range(10)]
-    hunger = [":meat_on_bone: "]+ [":brown_square:" for x in range(10)]
-    inventory = defaultdict(int)
-    steps = 0
-    actions = ["⬅","🔪","🪓","⛏","🍴"]
-    foods = ["cow","pig"]
-    foodamount = 0
-
-    def moveCheck(payload):
-      return str(payload.emoji) in actions and payload.message_id == grassMSG.id and payload.user_id != grassMSG.author.id
-    
-    def moveCheck2(payload):
-      return str(payload.emoji) in ["⬅","🍴"] and payload.message_id == grassMSG.id
-
-    # Sends PlayField as bot messages
-    await message.channel.send("".join(i.name for i in playField[0]))
-    playerMSG = await message.channel.send("".join(i.name for i in playField[1]))
-    grassMSG = await message.channel.send("".join(i.name for i in playField[2]))
-    healthMSG = await message.channel.send("".join(health))
-    hungerMSG = await message.channel.send("".join(hunger))
-    inventoryMSG = await message.channel.send("឵឵឵" + "".join(inventoryToEmoji(inventory)))
-  
-    await grassMSG.add_reaction("⬅")
-    while(len(health) > 1):
-      if playField[1][9] != bluesquare:
-        await grassMSG.add_reaction(playField[1][9].action)
-      for food in foods:
-        try:
-          if inventory.get(food)  > 0 and len(hunger) < 11:
-            await grassMSG.add_reaction("🍴")
-        except:
-          pass
-      if foodamount == 0:
-        await grassMSG.clear_reaction("🍴")
-
-      # Wait for User Input via Discord Reaction
-      pending_tasks = [client.wait_for('raw_reaction_add',check=moveCheck), client.wait_for('raw_reaction_remove',check=moveCheck2)]
-      done_tasks, pending_tasks = await asyncio.wait(pending_tasks,return_when=asyncio.FIRST_COMPLETED)
-      for task in done_tasks: payload = await task
-      reaction = str(payload.emoji)
-
-      if playField[1][9] != bluesquare:
-        await grassMSG.clear_reaction(playField[1][9].action)
-
-      # Player Encounter Actions
-      if reaction not in ["⬅","🍴"]:
-        if len(hunger) > 1:
-            hunger.pop()
-            await hungerMSG.edit(content = "".join(hunger))
-        drops = helper.blockDistributer(playField[1][9].dropamount,playField[1][9].droprates)
-        inventory[playField[1][9].drop] += drops
-        if reaction == "🔪":
-          foodamount += drops
-        await inventoryMSG.edit(content = "឵឵឵" + "".join(inventoryToEmoji(inventory)))
-        playField[1][9] = bluesquare   
-
-      if reaction == "🍴":
-        for food in foods:
-          try:
-            if inventory.get(food)  > 0 and len(hunger) < 11:
-              hunger.append(":brown_square:")
-              inventory[food] -= 1
-              foodamount -= 1
-            if inventory.get(food) == 0:
-              inventory.pop(food)
-          except:
-            pass
-        await hungerMSG.edit(content = "".join(hunger))
-        await inventoryMSG.edit(content = "឵឵឵" + "".join(inventoryToEmoji(inventory)))
-
-      # Player Move Left
-      if reaction == "⬅":
-        steps += 1
-        for i in reversed(range(9)):
-          playField[1][i+1] = playField[1][i]
-        if steps % 5 == 0:
-          if len(hunger) > 1:
-            hunger.pop()
-            await hungerMSG.edit(content = "".join(hunger))
-        if len(hunger) == 1:
-          if steps % 2 == 0:
-            if len(health) > 1:
-              health.pop()
-              await healthMSG.edit(content = "".join(health))
-        playField[1][0] = helper.blockDistributer(encounters, encountersprob)
-      await playerMSG.edit(content = "".join(i.name for i in playField[1]))
-    
-    # Player Death
-    death = ResourceEncounter(":headstone:")
-    playerMSG = await message.channel.send("".join(i.name for i in playField[1]))
-    playField[1][10] = death
-      
   ###########################################
   #               Tic-Tac-Toe               #
   ###########################################
@@ -362,6 +393,20 @@ async def on_message(message):
     except:
       cat=json.loads(request.text)[0]["url"]
       await message.channel.send(cat)
+  
+  if message.content.startswith("}testdog"):
+    animals = ["https://dog.ceo/api/breeds/image/random","https://api.thecatapi.com/v1/images/search"]
+    url = helper.blockDistributer(animals,[0.95,0.05])
+    request = requests.get(url)
+    try:
+      dog=json.loads(request.text)["message"]
+      breed = dog[dog.find("breed"):dog.find("/")]
+      print(dog)
+      print(dog.find("breeds/").find("/"))
+      await message.channel.send(embed = discord.Embed().set_image(url = dog).add_field(name = "Dog's Breed",value = "breed"))
+    except:
+      cat=json.loads(request.text)[0]["url"]
+      await message.channel.send(cat)
 
-
+keep_alive()
 client.run(os.getenv('TOKEN'))
